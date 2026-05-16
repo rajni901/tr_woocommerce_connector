@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_woo_sync_wizard_form" model="ir.ui.view">
+        <field name="name">woo.sync.wizard.form</field>
+        <field name="model">woo.sync.wizard</field>
+        <field name="arch" type="xml">
+            <form string="WooCommerce Sync">
+                <group>
+                    <field name="backend_id"/>
+                    <field name="operation"/>
+                    <field name="date_from"
+                           invisible="operation != 'import_orders'"
+                           string="Import Orders From"/>
+                    <field name="product_ids"
+                           invisible="operation != 'export_products'"
+                           widget="many2many_tags"/>
+                </group>
+                <div invisible="not result_message"
+                     class="alert alert-info mt-2">
+                    <field name="result_message" readonly="1" nolabel="1"/>
+                </div>
+                <footer>
+                    <button name="action_sync" type="object"
+                            string="Start Sync" class="btn-primary"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

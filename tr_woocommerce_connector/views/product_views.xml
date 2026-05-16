@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_product_template_woo_form" model="ir.ui.view">
+        <field name="name">product.template.woo.form</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="WooCommerce" name="woocommerce_tab"
+                      invisible="not woo_id and not woo_backend_id">
+                    <group>
+                        <group string="WooCommerce Info">
+                            <field name="woo_backend_id" readonly="1"/>
+                            <field name="woo_id" readonly="1"/>
+                            <field name="woo_last_sync" readonly="1"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_woo_products" model="ir.actions.act_window">
+        <field name="name">WooCommerce Products</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('woo_id', '!=', False)]</field>
+    </record>
+
+</odoo>

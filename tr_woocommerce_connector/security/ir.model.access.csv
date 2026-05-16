@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_woo_backend_manager,woo.backend.manager,model_woo_backend,base.group_system,1,1,1,1
+access_woo_backend_user,woo.backend.user,model_woo_backend,base.group_user,1,0,0,0
+access_woo_log,woo.log,model_woo_log,base.group_user,1,1,1,1
+access_woo_sync_wizard,woo.sync.wizard,model_woo_sync_wizard,base.group_user,1,1,1,1
