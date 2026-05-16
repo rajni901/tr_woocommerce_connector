@@ -1,4 +1,15 @@
-from odoo import _, fields, models
+from odoo import _, api, fields, models
+
+# WooCommerce → Odoo status mapping
+WOO_STATUS_MAP = {
+    'pending': 'draft',
+    'processing': 'sale',
+    'on-hold': 'draft',
+    'completed': 'done',
+    'cancelled': 'cancel',
+    'refunded': 'cancel',
+    'failed': 'cancel',
+}
 
 
 class SaleOrder(models.Model):
@@ -12,6 +23,107 @@ class SaleOrder(models.Model):
 
 class WooBackendOrder(models.Model):
     _inherit = 'woo.backend'
+
+    def _process_webhook_order(self, data):
+        """Process incoming order webhook from WooCommerce."""
+        woo_id = str(data.get('id', ''))
+        if not woo_id:
+            return
+
+        existing = self.env['sale.order'].search(
+            [('woo_id', '=', woo_id)], limit=1
+        )
+        woo_status = data.get('status', '')
+
+        if existing:
+            # Update status
+            existing.write({'woo_order_status': woo_status})
+            self._apply_woo_status(existing, woo_status)
+            self._log('import_orders', 'success',
+                      f'Order #{data.get("number")} status updated to "{woo_status}"', woo_id)
+        else:
+            # New order — import it
+            self._create_or_update_order(data)
+
+    def _process_webhook_order_deleted(self, data):
+        woo_id = str(data.get('id', ''))
+        order = self.env['sale.order'].search([('woo_id', '=', woo_id)], limit=1)
+        if order and order.state == 'draft':
+            order.action_cancel()
+
+    def _apply_woo_status(self, order, woo_status):
+        """Apply WooCommerce status to Odoo sale order."""
+        if woo_status in ('processing', 'completed') and order.state == 'draft':
+            try:
+                order.action_confirm()
+            except Exception:
+                pass
+        elif woo_status == 'cancelled' and order.state in ('draft', 'sent'):
+            try:
+                order.action_cancel()
+            except Exception:
+                pass
+
+    def _do_sync_order_statuses(self):
+        """Poll WooCommerce for recently updated orders and sync status."""
+        import datetime
+        since = self.last_order_import or (
+            fields.Datetime.now() - datetime.timedelta(hours=24)
+        )
+        params = {
+            'per_page': 100,
+            'modified_after': since.strftime('%Y-%m-%dT%H:%M:%S'),
+        }
+        orders = self._api_get('orders', params)
+        updated = 0
+        for woo_order in (orders or []):
+            woo_id = str(woo_order['id'])
+            existing = self.env['sale.order'].search(
+                [('woo_id', '=', woo_id)], limit=1
+            )
+            if existing:
+                woo_status = woo_order.get('status', '')
+                existing.write({'woo_order_status': woo_status})
+                self._apply_woo_status(existing, woo_status)
+                updated += 1
+        self._log('import_orders', 'success', f'Synced status for {updated} orders.')
+        return updated
+
+    def action_register_webhooks(self):
+        """Register webhooks in WooCommerce to receive real-time updates."""
+        self.ensure_one()
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        webhook_url = f'{base_url}/woocommerce/webhook/{self.id}'
+
+        topics = [
+            ('order.created', 'Odoo: Order Created'),
+            ('order.updated', 'Odoo: Order Updated'),
+            ('order.deleted', 'Odoo: Order Deleted'),
+        ]
+        registered = 0
+        for topic, name in topics:
+            try:
+                self._api_post('webhooks', {
+                    'name': name,
+                    'topic': topic,
+                    'delivery_url': webhook_url,
+                    'status': 'active',
+                })
+                registered += 1
+            except Exception as e:
+                self._log('import_orders', 'warning',
+                          f'Webhook "{topic}" registration failed: {str(e)}')
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Webhooks Registered'),
+                'message': _(f'Registered {registered} webhooks. URL: {webhook_url}'),
+                'type': 'success',
+                'sticky': True,
+            },
+        }
 
     def _do_import_orders(self, date_from=None):
         params = {'per_page': 100, 'page': 1}

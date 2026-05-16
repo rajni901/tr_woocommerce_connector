@@ -8,7 +8,19 @@
         <field name="code">model._cron_import_orders()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">hours</field>
-        <field name="numbercall">-1</field>
+        <field name="active">False</field>
+    </record>
+
+    <record id="cron_woo_sync_order_status" model="ir.cron">
+        <field name="name">WooCommerce: Sync Order Statuses</field>
+        <field name="model_id" ref="model_woo_backend"/>
+        <field name="state">code</field>
+        <field name="code">
+for backend in model.search([('active', '=', True)]):
+    backend._do_sync_order_statuses()
+        </field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
         <field name="active">False</field>
     </record>
 
@@ -19,7 +31,6 @@
         <field name="code">model._cron_sync_stock()</field>
         <field name="interval_number">6</field>
         <field name="interval_type">hours</field>
-        <field name="numbercall">-1</field>
         <field name="active">False</field>
     </record>
 

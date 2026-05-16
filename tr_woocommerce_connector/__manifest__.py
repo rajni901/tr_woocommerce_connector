@@ -26,11 +26,11 @@ Features:
     'data': [
         'security/ir.model.access.csv',
         'data/scheduled_actions.xml',
-        'views/woo_backend_views.xml',
         'views/woo_log_views.xml',
         'views/product_views.xml',
         'views/sale_order_views.xml',
         'wizard/woo_sync_wizard_views.xml',
+        'views/woo_backend_views.xml',
     ],
     'images': ['static/description/banner.png'],
     'installable': True,

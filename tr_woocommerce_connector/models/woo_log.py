@@ -10,9 +10,10 @@ class WooLog(models.Model):
     backend_id = fields.Many2one('woo.backend', string='Store', ondelete='cascade')
     operation = fields.Selection([
         ('import_orders', 'Import Orders'),
+        ('import_products', 'Import Products'),
+        ('import_customers', 'Import Customers'),
         ('export_products', 'Export Products'),
         ('sync_stock', 'Sync Stock'),
-        ('import_customers', 'Import Customers'),
     ], string='Operation')
     status = fields.Selection([
         ('success', 'Success'),

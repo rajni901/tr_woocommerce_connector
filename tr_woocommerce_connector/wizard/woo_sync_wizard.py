@@ -8,10 +8,11 @@ class WooSyncWizard(models.TransientModel):
 
     backend_id = fields.Many2one('woo.backend', string='Store', required=True)
     operation = fields.Selection([
-        ('import_orders', 'Import Orders'),
-        ('export_products', 'Export Products'),
-        ('sync_stock', 'Sync Stock'),
-        ('import_customers', 'Import Customers'),
+        ('import_orders', 'Import Orders from WooCommerce'),
+        ('import_products', 'Import Products from WooCommerce'),
+        ('import_customers', 'Import Customers from WooCommerce'),
+        ('export_products', 'Export Products to WooCommerce'),
+        ('sync_stock', 'Sync Stock to WooCommerce'),
     ], string='Operation', required=True)
     date_from = fields.Datetime(string='Import From Date')
     product_ids = fields.Many2many(
@@ -28,6 +29,9 @@ class WooSyncWizard(models.TransientModel):
             if self.operation == 'import_orders':
                 count = backend._do_import_orders(date_from=self.date_from)
                 msg = _(f'Successfully imported {count} orders.')
+            elif self.operation == 'import_products':
+                count = backend._do_import_products()
+                msg = _(f'Successfully imported/updated {count} products.')
             elif self.operation == 'export_products':
                 pids = self.product_ids.ids if self.product_ids else None
                 count = backend._do_export_products(product_ids=pids)

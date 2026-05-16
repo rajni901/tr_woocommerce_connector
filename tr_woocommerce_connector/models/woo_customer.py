@@ -25,7 +25,7 @@ class WooBackendCustomer(models.Model):
 
         billing = woo_customer.get('billing', {})
         vals = {
-            'name': billing.get('first_name', '') + ' ' + billing.get('last_name', ''),
+            'name': (billing.get('first_name', '') + ' ' + billing.get('last_name', '')).strip() or email or 'WooCommerce Customer',
             'email': email or billing.get('email', ''),
             'phone': billing.get('phone', ''),
             'street': billing.get('address_1', ''),
@@ -48,3 +48,22 @@ class WooBackendCustomer(models.Model):
             partner = Partner.create(vals)
 
         return partner
+
+    def _do_import_customers(self):
+        params = {'per_page': 100, 'page': 1}
+        imported = 0
+        while True:
+            customers = self._api_get('customers', params)
+            if not customers:
+                break
+            for customer in customers:
+                try:
+                    self._get_or_create_partner(customer)
+                    imported += 1
+                except Exception as e:
+                    self._log('import_customers', 'error', str(e))
+            if len(customers) < 100:
+                break
+            params['page'] += 1
+        self._log('import_customers', 'success', f'Imported {imported} customers.')
+        return imported

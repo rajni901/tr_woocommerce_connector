@@ -140,6 +140,57 @@ class WooBackend(models.Model):
         except Exception as e:
             raise UserError(_('Connection failed: %s', str(e)))
 
+    def action_import_orders_now(self):
+        self.ensure_one()
+        try:
+            count = self._do_import_orders()
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Import Complete'),
+                    'message': _(f'Successfully imported {count} orders!'),
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        except Exception as e:
+            raise UserError(str(e))
+
+    def action_import_products_now(self):
+        self.ensure_one()
+        try:
+            count = self._do_import_products()
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Import Complete'),
+                    'message': _(f'Successfully imported/updated {count} products!'),
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        except Exception as e:
+            raise UserError(str(e))
+
+    def action_import_customers_now(self):
+        self.ensure_one()
+        try:
+            count = self._do_import_customers()
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Import Complete'),
+                    'message': _(f'Successfully imported {count} customers!'),
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        except Exception as e:
+            raise UserError(str(e))
+
     def action_import_orders(self):
         self.ensure_one()
         return {
