@@ -157,22 +157,71 @@ class WooBackend(models.Model):
         except Exception as e:
             raise UserError(str(e))
 
-    def action_import_products_now(self):
+    def action_test_import_one(self):
+        """Test import of first product only — shows exact error."""
         self.ensure_one()
         try:
-            count = self._do_import_products()
+            products = self._api_get('products', {'per_page': 1})
+            if not products:
+                raise UserError(_('No products found in WooCommerce!'))
+            woo_product = products[0]
+            woo_product['_variations'] = []
+            result = self._import_basic_product(woo_product)
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': _('Import Complete'),
-                    'message': _(f'Successfully imported/updated {count} products!'),
+                    'title': _('Test Import Success'),
+                    'message': _(f'Product "{woo_product["name"]}" {result} successfully!'),
                     'type': 'success',
-                    'sticky': False,
+                    'sticky': True,
                 },
             }
         except Exception as e:
-            raise UserError(str(e))
+            import traceback
+            raise UserError(_(f'Import Error:\n{str(e)}\n\n{traceback.format_exc()}'))
+
+    def action_test_api(self):
+        """Test API and show what WooCommerce returns."""
+        self.ensure_one()
+        try:
+            products = self._api_get('products', {'per_page': 5})
+            orders = self._api_get('orders', {'per_page': 5})
+            msg = (
+                f'Products found: {len(products)}\n'
+                f'Orders found: {len(orders)}\n'
+                f'First product: {products[0].get("name") if products else "none"}'
+            )
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('API Test Result'),
+                    'message': msg,
+                    'type': 'success',
+                    'sticky': True,
+                },
+            }
+        except Exception as e:
+            raise UserError(_(f'API Error: {str(e)}'))
+
+    def action_import_products_now(self):
+        self.ensure_one()
+        try:
+            count = self._do_import_products()
+        except Exception as e:
+            import traceback
+            raise UserError(_(f'Import failed:\n{str(e)}\n\n{traceback.format_exc()}'))
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Import Complete'),
+                'message': _(f'Imported/updated {count} products! Check Sync Logs for details.'),
+                'type': 'success' if count > 0 else 'warning',
+                'sticky': True,
+            },
+        }
 
     def action_import_customers_now(self):
         self.ensure_one()

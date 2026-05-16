@@ -97,107 +97,125 @@ class WooBackendProduct(models.Model):
         return attr, attr_values
 
     def _do_import_products(self):
+        # ── PHASE 1: Fetch ALL products via HTTP ──
+        all_products = []
         params = {'per_page': 100, 'page': 1}
-        imported, updated = 0, 0
-
         while True:
-            products = self._api_get('products', params)
+            try:
+                products = self._api_get('products', params)
+            except Exception as e:
+                self._log('import_products', 'error', f'Fetch failed: {str(e)}')
+                break
             if not products:
                 break
-
-            for woo_product in products:
-                try:
-                    result = self._import_single_product(woo_product)
-                    if result == 'created':
-                        imported += 1
-                    elif result == 'updated':
-                        updated += 1
-                except Exception as e:
-                    self._log('import_products', 'error',
-                              f'Product "{woo_product.get("name")}": {str(e)}')
-
+            # Set empty variations by default — fetch separately
+            for p in products:
+                p['_variations'] = []
+            all_products.extend(products)
             if len(products) < 100:
                 break
             params['page'] += 1
+
+        if not all_products:
+            self._log('import_products', 'warning', 'No products returned from WooCommerce.')
+            return 0
+
+        # ── PHASE 2: DB operations — basic import first ──
+        imported, updated = 0, 0
+        for woo_product in all_products:
+            try:
+                result = self._import_basic_product(woo_product)
+                if result == 'created':
+                    imported += 1
+                elif result == 'updated':
+                    updated += 1
+            except Exception as e:
+                self._log('import_products', 'error',
+                          f'Product "{woo_product.get("name")}": {str(e)}')
 
         self._log('import_products', 'success',
                   f'Imported {imported} new, updated {updated} products.')
         return imported + updated
 
-    def _import_single_product(self, woo_product):
+    def _import_basic_product(self, woo_product):
+        """Import product without attributes first, then try attributes."""
         woo_id = str(woo_product['id'])
         sku = woo_product.get('sku', '')
         woo_type = woo_product.get('type', 'simple')
 
         existing = self.env['product.template'].search(
-            [('woo_id', '=', woo_id)], limit=1
-        )
+            [('woo_id', '=', woo_id)], limit=1)
         if not existing and sku:
             existing = self.env['product.template'].search(
-                [('default_code', '=', sku)], limit=1
-            )
+                [('default_code', '=', sku)], limit=1)
 
+        # Basic fields only
         vals = {
             'name': woo_product.get('name', 'WooCommerce Product'),
             'list_price': float(woo_product.get('price') or
                                 woo_product.get('regular_price') or 0),
             'description_sale': woo_product.get('short_description', ''),
-            'description': woo_product.get('description', ''),
             'woo_id': woo_id,
             'woo_backend_id': self.id,
             'woo_last_sync': fields.Datetime.now(),
             'woo_type': woo_type,
         }
-
         if sku:
             vals['default_code'] = sku
 
-        # Download main image
+        # Image
         images = woo_product.get('images', [])
         if images and images[0].get('src'):
             img = self._download_image(images[0]['src'])
             if img:
                 vals['image_1920'] = img
 
-        # Handle attributes for variable products
-        attributes = woo_product.get('attributes', [])
-        attribute_line_ids = []
-        if attributes and woo_type == 'variable':
-            for attr_data in attributes:
-                if not attr_data.get('variation'):
-                    continue
-                attr_name = attr_data.get('name', '')
-                attr_options = attr_data.get('options', [])
-                if not attr_name or not attr_options:
-                    continue
-                attr, attr_value_ids = self._get_or_create_attribute(
-                    attr_name, attr_options
-                )
-                attribute_line_ids.append((0, 0, {
-                    'attribute_id': attr.id,
-                    'value_ids': [(6, 0, attr_value_ids)],
-                }))
-
         if existing:
             existing.write(vals)
-            if attribute_line_ids:
-                existing.attribute_line_ids.unlink()
-                existing.write({'attribute_line_ids': attribute_line_ids})
-            # Import variations
-            if woo_type == 'variable':
-                self._import_variations(existing, woo_id)
-            return 'updated'
+            product = existing
+            action = 'updated'
         else:
-            if attribute_line_ids:
-                vals['attribute_line_ids'] = attribute_line_ids
             product = self.env['product.template'].create(vals)
-            if woo_type == 'variable':
-                self._import_variations(product, woo_id)
-            return 'created'
+            action = 'created'
 
-    def _import_variations(self, product_tmpl, woo_product_id):
-        variations = self._api_get(f'products/{woo_product_id}/variations',
-                                   {'per_page': 100})
+        # Try attributes — don't fail the whole import if this fails
+        if woo_type == 'variable':
+            try:
+                self._import_attributes(product, woo_product)
+            except Exception as e:
+                self._log('import_products', 'warning',
+                          f'Attributes failed for "{product.name}": {str(e)}')
+            try:
+                self._import_variations_data(product, woo_product.get('_variations', []))
+            except Exception as e:
+                self._log('import_products', 'warning',
+                          f'Variants failed for "{product.name}": {str(e)}')
+
+        return action
+
+    def _import_attributes(self, product, woo_product):
+        """Import product attributes and create attribute lines."""
+        attributes = woo_product.get('attributes', [])
+        attribute_line_ids = []
+
+        for attr_data in attributes:
+            if not attr_data.get('variation'):
+                continue
+            attr_name = attr_data.get('name', '')
+            attr_options = attr_data.get('options', [])
+            if not attr_name or not attr_options:
+                continue
+            attr, attr_value_ids = self._get_or_create_attribute(attr_name, attr_options)
+            attribute_line_ids.append((0, 0, {
+                'attribute_id': attr.id,
+                'value_ids': [(6, 0, attr_value_ids)],
+            }))
+
+        if attribute_line_ids:
+            product.attribute_line_ids.unlink()
+            product.write({'attribute_line_ids': attribute_line_ids})
+
+    def _import_variations_data(self, product_tmpl, variations):
         if not variations:
             return
 
@@ -268,17 +286,25 @@ class WooBackendProduct(models.Model):
             ('woo_backend_id', '=', self.id),
             ('woo_id', '!=', False),
         ])
+
+        # Collect data before HTTP calls
+        sync_data = [(p.woo_id, p.name, int(p.qty_available)) for p in products]
+
         synced = 0
-        for product in products:
+        errors = []
+        for woo_id, name, qty in sync_data:
             try:
-                self._api_put(f'products/{product.woo_id}', {
-                    'stock_quantity': int(product.qty_available),
+                self._api_put(f'products/{woo_id}', {
+                    'stock_quantity': qty,
                     'manage_stock': True,
                 })
                 synced += 1
             except Exception as e:
-                self._log('sync_stock', 'error',
-                          f'Stock sync failed for "{product.name}": {str(e)}')
-        self.last_stock_sync = fields.Datetime.now()
+                errors.append(f'{name}: {str(e)}')
+
+        # Write to DB after all HTTP calls
+        self.with_context(mail_notrack=True).last_stock_sync = fields.Datetime.now()
+        for err in errors:
+            self._log('sync_stock', 'error', err)
         self._log('sync_stock', 'success', f'Synced stock for {synced} products.')
         return synced

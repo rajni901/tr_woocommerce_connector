@@ -134,22 +134,28 @@ class WooBackendOrder(models.Model):
         elif self.last_order_import:
             params['after'] = self.last_order_import.strftime('%Y-%m-%dT%H:%M:%S')
 
-        imported = 0
+        # Fetch all orders first
+        all_orders = []
         while True:
             orders = self._api_get('orders', params)
             if not orders:
                 break
-            for woo_order in orders:
-                try:
-                    self._create_or_update_order(woo_order)
-                    imported += 1
-                except Exception as e:
-                    self._log('import_orders', 'error',
-                              f'Order #{woo_order.get("number")}: {str(e)}',
-                              woo_order.get('id'))
+            all_orders.extend(orders)
             if len(orders) < 100:
                 break
             params['page'] += 1
+
+        # Process with DB operations
+        imported = 0
+        for woo_order in all_orders:
+            try:
+                with self.env.cr.savepoint():
+                    self._create_or_update_order(woo_order)
+                    imported += 1
+            except Exception as e:
+                self._log('import_orders', 'error',
+                          f'Order #{woo_order.get("number")}: {str(e)}',
+                          woo_order.get('id'))
 
         self.last_order_import = fields.Datetime.now()
         self._log('import_orders', 'success', f'Imported {imported} orders.')

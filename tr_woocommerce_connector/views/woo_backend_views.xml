@@ -31,6 +31,10 @@
                     <div class="o_row mb-3">
                         <button name="action_test_connection" type="object"
                                 string="Test Connection" class="btn-primary"/>
+                        <button name="action_test_api" type="object"
+                                string="Test API" class="btn-info"/>
+                        <button name="action_test_import_one" type="object"
+                                string="Test Import 1 Product" class="btn-warning"/>
                         <button name="action_import_orders_now" type="object"
                                 string="Import Orders" class="btn-success"/>
                         <button name="action_import_products_now" type="object"
